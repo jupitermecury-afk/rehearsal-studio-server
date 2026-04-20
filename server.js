@@ -2,31 +2,25 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
-}));
-
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: ['Content-Type'] }));
 app.options('*', cors());
 app.use(express.json());
 
+const ANTHROPIC_KEY = "const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY";
+
 app.post('/anticipate', async (req, res) => {
-  const key = process.env.ANTHROPIC_API_KEY;
-  console.log('Key present:', !!key);
-  console.log('Key starts with:', key ? key.substring(0,12) : 'MISSING');
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': key,
+        'x-api-key': ANTHROPIC_KEY,
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify(req.body)
     });
     const data = await response.json();
-    console.log('Anthropic status:', response.status);
+    console.log('Status:', response.status);
     res.json(data);
   } catch (err) {
     console.error('Error:', err.message);
@@ -34,14 +28,7 @@ app.post('/anticipate', async (req, res) => {
   }
 });
 
-app.get('/health', (req, res) => {
-  const key = process.env.ANTHROPIC_API_KEY;
-  res.json({ 
-    status: 'ok',
-    key_present: !!key,
-    key_prefix: key ? key.substring(0,12) : 'MISSING'
-  });
-});
+app.get('/health', (req, res) => res.json({ status: 'ok', key_present: true }));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Rehearsal Studio server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
