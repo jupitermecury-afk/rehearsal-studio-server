@@ -2,7 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
+}));
+
+app.options('*', cors());
 app.use(express.json());
 
 app.post('/anticipate', async (req, res) => {
@@ -19,6 +25,7 @@ app.post('/anticipate', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (err) {
+    console.error('Error:', err.message);
     res.status(500).json({ error: { message: err.message } });
   }
 });
