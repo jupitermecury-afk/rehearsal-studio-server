@@ -13,7 +13,7 @@ app.post('/anticipate', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'x-api-key': process.env.TEST_KEY,
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify(req.body)
@@ -28,7 +28,7 @@ app.post('/anticipate', async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = process.env.TEST_KEY;
   res.json({ status: 'ok', key_present: !!key, key_prefix: key ? key.substring(0,12) : 'MISSING' });
 });
 
