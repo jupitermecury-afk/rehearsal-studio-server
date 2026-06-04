@@ -33,4 +33,24 @@ app.get('/health', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+app.post('/counterpart', async (req, res) => {
+  const { model, max_tokens, system, messages, key_name } = req.body;
+  console.log(`[Counterpart] key=${key_name || 'unknown'} messages=${messages?.length}`);
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({ model, max_tokens, system, messages })
+    });
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error('[Counterpart] error:', err);
+    res.status(500).json({ error: { message: err.message } });
+  }
+});
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
