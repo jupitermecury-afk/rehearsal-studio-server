@@ -14,7 +14,7 @@ app.post('/anticipate', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type':      'application/json',
-        'x-api-key':         process.env.ANTHROPIC_API_KEY,
+        'x-api-key':         process.env.TEST_KEY,
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({ model, max_tokens, system, messages })
@@ -68,7 +68,7 @@ app.post('/counterpart', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type':      'application/json',
-        'x-api-key':         process.env.ANTHROPIC_API_KEY,
+        'x-api-key':         process.env.TEST_KEY,
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
@@ -122,7 +122,7 @@ Use this information naturally in your response. Do not announce that you search
       method: 'POST',
       headers: {
         'Content-Type':      'application/json',
-        'x-api-key':         process.env.ANTHROPIC_API_KEY,
+        'x-api-key':         process.env.TEST_KEY,
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({ model, max_tokens, system: finalSystem, messages })
