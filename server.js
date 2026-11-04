@@ -211,14 +211,17 @@ app.post('/anticipate', async (req, res) => {
   }
 
   try {
-    const body = JSON.stringify({
+    const reqBody = {
       model:      REHEARSAL_MODEL,
       max_tokens: REHEARSAL_MAX_TOKENS,
       system:     rehearsalSystem(grade.trim(), topic.trim()),
-      messages:   messages.map(m => ({ role: m.role, content: m.content })),
-      tools:       [TURN_TOOL],
-      tool_choice: { type: 'tool', name: TURN_TOOL.name }
-    });
+      messages:   messages.map(m => ({ role: m.role, content: m.content }))
+    };
+    if (process.env.REHEARSAL_STRUCTURED === '1') {   // experimental; forced tool use was less reliable in testing
+      reqBody.tools = [TURN_TOOL];
+      reqBody.tool_choice = { type: 'tool', name: TURN_TOOL.name };
+    }
+    const body = JSON.stringify(reqBody);
 
     // The model sometimes returns malformed JSON. Validate here and retry so
     // clients only ever receive a reply they can parse.
