@@ -147,22 +147,44 @@ app.post('/anticipate', async (req, res) => {
   }
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type':      'application/json',
-        'x-api-key':         process.env.TEST_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model:      REHEARSAL_MODEL,
-        max_tokens: REHEARSAL_MAX_TOKENS,
-        system:     rehearsalSystem(grade.trim(), topic.trim()),
-        messages:   messages.map(m => ({ role: m.role, content: m.content }))
-      })
+    const body = JSON.stringify({
+      model:      REHEARSAL_MODEL,
+      max_tokens: REHEARSAL_MAX_TOKENS,
+      system:     rehearsalSystem(grade.trim(), topic.trim()),
+      messages:   messages.map(m => ({ role: m.role, content: m.content }))
     });
-    const data = await response.json();
-    res.status(response.ok ? 200 : response.status).json(data);
+
+    // The model sometimes returns malformed JSON. Validate here and retry so
+    // clients only ever receive a reply they can parse.
+    let lastRaw = '';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type':      'application/json',
+          'x-api-key':         process.env.TEST_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        body
+      });
+      const data = await response.json();
+      if (!response.ok) return res.status(response.status).json(data);
+
+      const raw = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+      try {
+        const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+        if (parsed && typeof parsed.scene === 'string' && Array.isArray(parsed.students)) {
+          data.content = [{ type: 'text', text: JSON.stringify(parsed) }];
+          return res.json(data);
+        }
+        throw new Error('missing scene/students');
+      } catch (e) {
+        lastRaw = raw;
+        console.error(`[Rehearsal] bad model JSON (attempt ${attempt}, stop=${data.stop_reason}): ${e.message}
+${raw.slice(0, 3000)}`);
+      }
+    }
+    res.status(502).json({ error: { message: 'The classroom had a hiccup. Please press Respond again.' } });
   } catch (err) {
     console.error('[Rehearsal] error:', err);
     res.status(500).json({ error: { message: err.message } });
