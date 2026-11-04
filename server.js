@@ -127,6 +127,58 @@ HARD CONSTRAINTS:
 - Base all mathematics on realistic NC curriculum for the grade and topic specified.`;
 }
 
+const SCORE = { type: 'string', enum: ['strong', 'developing', 'missed'] };
+const TURN_TOOL = {
+  name: 'classroom_turn',
+  description: 'Return this turn of the classroom simulation.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      turn:  { type: 'integer' },
+      scene: { type: 'string' },
+      students: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            text: { type: 'string' },
+            av:   { type: 'string', enum: ['d', 'l', 'm'] }
+          },
+          required: ['name', 'text', 'av']
+        }
+      },
+      input_prompt: { type: ['string', 'null'] },
+      is_closing:   { type: 'boolean' },
+      feedback: {
+        type: ['object', 'null'],
+        properties: {
+          question_type: { type: 'string' },
+          scores: {
+            type: 'object',
+            properties: {
+              mathematical_advancement: SCORE,
+              student_agency:           SCORE,
+              equity_of_access:         SCORE
+            }
+          },
+          observation: { type: 'string' },
+          alternative: { type: 'string' }
+        }
+      },
+      arc_debrief: {
+        type: ['object', 'null'],
+        properties: {
+          pattern:  { type: 'string' },
+          strength: { type: 'string' },
+          focus:    { type: 'string' }
+        }
+      }
+    },
+    required: ['turn', 'scene', 'students', 'input_prompt', 'is_closing']
+  }
+};
+
 app.post('/anticipate', async (req, res) => {
   const { key, grade, topic, messages } = req.body || {};
 
@@ -151,7 +203,9 @@ app.post('/anticipate', async (req, res) => {
       model:      REHEARSAL_MODEL,
       max_tokens: REHEARSAL_MAX_TOKENS,
       system:     rehearsalSystem(grade.trim(), topic.trim()),
-      messages:   messages.map(m => ({ role: m.role, content: m.content }))
+      messages:   messages.map(m => ({ role: m.role, content: m.content })),
+      tools:       [TURN_TOOL],
+      tool_choice: { type: 'tool', name: TURN_TOOL.name }
     });
 
     // The model sometimes returns malformed JSON. Validate here and retry so
@@ -170,9 +224,14 @@ app.post('/anticipate', async (req, res) => {
       const data = await response.json();
       if (!response.ok) return res.status(response.status).json(data);
 
-      const raw = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+      const toolBlock = (data.content || []).find(b => b.type === 'tool_use');
+      const raw = toolBlock
+        ? JSON.stringify(toolBlock.input)
+        : (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
       try {
-        const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+        const parsed = toolBlock
+          ? toolBlock.input
+          : JSON.parse(raw.replace(/```json|```/g, '').trim());
         if (parsed && typeof parsed.scene === 'string' && Array.isArray(parsed.students)) {
           data.content = [{ type: 'text', text: JSON.stringify(parsed) }];
           return res.json(data);
