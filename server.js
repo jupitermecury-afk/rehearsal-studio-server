@@ -13,7 +13,7 @@ app.use(express.json({ limit: '1mb' }));
 app.set('trust proxy', 1);
 
 const REHEARSAL_MODEL      = 'claude-sonnet-4-5';
-const REHEARSAL_MAX_TOKENS = 1800;
+const REHEARSAL_MAX_TOKENS = 3000;
 const MAX_MESSAGES         = 14;     // 5 turns = at most 9 messages
 const MAX_TOTAL_CHARS      = 40000;
 const PER_IP_LIMIT         = Number(process.env.REHEARSAL_PER_IP_LIMIT || 120);    // per 10 min
@@ -179,6 +179,18 @@ const TURN_TOOL = {
   }
 };
 
+// Tool inputs occasionally arrive with a nested object/array as a JSON string.
+function unstring(v) {
+  if (typeof v === 'string') { try { return JSON.parse(v); } catch (e) { return v; } }
+  return v;
+}
+function normalizeTurn(p) {
+  if (!p || typeof p !== 'object') return p;
+  for (const k of ['students', 'feedback', 'arc_debrief']) p[k] = unstring(p[k]);
+  if (p.feedback && typeof p.feedback === 'object') p.feedback.scores = unstring(p.feedback.scores);
+  return p;
+}
+
 app.post('/anticipate', async (req, res) => {
   const { key, grade, topic, messages } = req.body || {};
 
@@ -211,6 +223,7 @@ app.post('/anticipate', async (req, res) => {
     // The model sometimes returns malformed JSON. Validate here and retry so
     // clients only ever receive a reply they can parse.
     let lastRaw = '';
+    const reasons = [];
     for (let attempt = 1; attempt <= 3; attempt++) {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -229,9 +242,9 @@ app.post('/anticipate', async (req, res) => {
         ? JSON.stringify(toolBlock.input)
         : (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
       try {
-        const parsed = toolBlock
+        const parsed = normalizeTurn(toolBlock
           ? toolBlock.input
-          : JSON.parse(raw.replace(/```json|```/g, '').trim());
+          : JSON.parse(raw.replace(/```json|```/g, '').trim()));
         if (parsed && typeof parsed.scene === 'string' && Array.isArray(parsed.students)) {
           data.content = [{ type: 'text', text: JSON.stringify(parsed) }];
           return res.json(data);
@@ -239,11 +252,12 @@ app.post('/anticipate', async (req, res) => {
         throw new Error('missing scene/students');
       } catch (e) {
         lastRaw = raw;
+        reasons.push(`${e.message} (stop=${data.stop_reason}, out=${data.usage && data.usage.output_tokens})`);
         console.error(`[Rehearsal] bad model JSON (attempt ${attempt}, stop=${data.stop_reason}): ${e.message}
 ${raw.slice(0, 3000)}`);
       }
     }
-    res.status(502).json({ error: { message: 'The classroom had a hiccup. Please press Respond again.' } });
+    res.status(502).json({ error: { message: 'The classroom had a hiccup. Please press Respond again.' }, debug: reasons });
   } catch (err) {
     console.error('[Rehearsal] error:', err);
     res.status(500).json({ error: { message: err.message } });
