@@ -191,6 +191,16 @@ function normalizeTurn(p) {
   return p;
 }
 
+function stageNote(moves) {
+  if (moves >= 5) {
+    return "\n\nSERVER NOTE: The teacher has now made their FIFTH and FINAL move. You MUST return the final response now: is_closing true, input_prompt null, feedback for this move, and a complete arc_debrief with pattern, strength and focus.";
+  }
+  if (moves >= 1) {
+    return `\n\nSERVER NOTE: The teacher has made ${moves} of 5 moves. This is NOT the final response: arc_debrief must be null and is_closing false, and input_prompt must pose the next decision. The turn number to return is ${moves + 1}.`;
+  }
+  return '';
+}
+
 app.post('/anticipate', async (req, res) => {
   const { key, grade, topic, messages } = req.body || {};
 
@@ -210,11 +220,13 @@ app.post('/anticipate', async (req, res) => {
     return res.status(429).json({ error: { message: 'The studio is busy right now. Please wait a minute and try again.' } });
   }
 
+  const moves = messages.filter(m => m.role === 'user').length - 1;   // teacher moves so far
+
   try {
     const reqBody = {
       model:      REHEARSAL_MODEL,
       max_tokens: REHEARSAL_MAX_TOKENS,
-      system:     rehearsalSystem(grade.trim(), topic.trim()),
+      system:     rehearsalSystem(grade.trim(), topic.trim()) + stageNote(moves),
       messages:   messages.map(m => ({ role: m.role, content: m.content }))
     };
     if (process.env.REHEARSAL_STRUCTURED === '1') {   // experimental; forced tool use was less reliable in testing
@@ -248,6 +260,10 @@ app.post('/anticipate', async (req, res) => {
         const parsed = normalizeTurn(toolBlock
           ? toolBlock.input
           : JSON.parse(raw.replace(/```json|```/g, '').trim()));
+        const hasDebrief = !!(parsed && parsed.arc_debrief && parsed.arc_debrief.pattern && parsed.arc_debrief.strength && parsed.arc_debrief.focus);
+        if (moves >= 5 && !hasDebrief) throw new Error('final move without arc_debrief');
+        if (moves < 5 && parsed && parsed.arc_debrief) parsed.arc_debrief = null;
+        if (moves < 5 && parsed) parsed.is_closing = false;
         if (parsed && typeof parsed.scene === 'string' && Array.isArray(parsed.students)) {
           data.content = [{ type: 'text', text: JSON.stringify(parsed) }];
           return res.json(data);
