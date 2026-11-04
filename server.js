@@ -201,8 +201,27 @@ function stageNote(moves) {
   return '';
 }
 
+// ── PER-PERSON LIMITS + SPEND BUDGET ────────────────────────────────────────
+// A call costs roughly 2 cents, a 6-call session roughly 12 cents.
+const SESSIONS_PER_CLIENT = Number(process.env.REHEARSAL_SESSIONS_PER_CLIENT || 2);
+const CALLS_PER_CLIENT    = Number(process.env.REHEARSAL_CALLS_PER_CLIENT || 16);
+const SESSIONS_PER_IP     = Number(process.env.REHEARSAL_SESSIONS_PER_IP || 150);   // shared wifi can be one IP
+const TOTAL_CALL_BUDGET   = Number(process.env.REHEARSAL_TOTAL_CALL_BUDGET || 700); // model attempts since last deploy
+let budgetUsed = 0;
+const clients = new Map();   // id -> { sessions, calls, t }
+function clientRec(id) {
+  let r = clients.get(id);
+  if (!r) { r = { sessions: 0, calls: 0, t: Date.now() }; clients.set(id, r); }
+  r.t = Date.now();
+  return r;
+}
+setInterval(() => {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  for (const [id, r] of clients) if (r.t < cutoff) clients.delete(id);
+}, 60 * 60 * 1000).unref();
+
 app.post('/anticipate', async (req, res) => {
-  const { key, grade, topic, messages } = req.body || {};
+  const { key, grade, topic, messages, clientId } = req.body || {};
 
   if (!keyIsValid(key)) {
     return res.status(401).json({ error: { message: 'Access key is not valid right now.' } });
@@ -218,6 +237,18 @@ app.post('/anticipate', async (req, res) => {
   }
   if (rateLimited(req.ip)) {
     return res.status(429).json({ error: { message: 'The studio is busy right now. Please wait a minute and try again.' } });
+  }
+
+
+  const isStart = messages.length === 1;
+  const cid  = (typeof clientId === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(clientId)) ? 'c:' + clientId : 'ip:' + req.ip;
+  const rec  = clientRec(cid);
+  const ipRec = clientRec('ipstart:' + req.ip);
+  if (budgetUsed >= TOTAL_CALL_BUDGET) {
+    return res.status(429).json({ error: { message: 'The studio has reached its capacity for this event. Please see the presenter.' } });
+  }
+  if (rec.calls >= CALLS_PER_CLIENT || (isStart && (rec.sessions >= SESSIONS_PER_CLIENT || ipRec.sessions >= SESSIONS_PER_IP))) {
+    return res.status(429).json({ error: { message: 'You have used your practice sessions for this event. Please see the presenter if you need more.' } });
   }
 
   const moves = messages.filter(m => m.role === 'user').length - 1;   // teacher moves so far
@@ -240,6 +271,7 @@ app.post('/anticipate', async (req, res) => {
     let lastRaw = '';
     const reasons = [];
     for (let attempt = 1; attempt <= 3; attempt++) {
+      budgetUsed++;
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -266,6 +298,8 @@ app.post('/anticipate', async (req, res) => {
         if (moves < 5 && parsed) parsed.is_closing = false;
         if (parsed && typeof parsed.scene === 'string' && Array.isArray(parsed.students)) {
           data.content = [{ type: 'text', text: JSON.stringify(parsed) }];
+          rec.calls++;
+          if (isStart) { rec.sessions++; ipRec.sessions++; }
           return res.json(data);
         }
         throw new Error('missing scene/students');
