@@ -21,8 +21,8 @@ const GLOBAL_HOURLY_LIMIT  = Number(process.env.REHEARSAL_GLOBAL_HOURLY_LIMIT ||
 
 // Same keys/windows as the page (UTC, inclusive). Add new cohorts here too.
 const ACCESS_KEYS = [
-  { key: 'REHEARSE-NOV-2026', validFrom: '2026-11-04', validTo: '2026-11-09' },
-  { key: 'PRESENTER-TEST',    validFrom: '2026-11-01', validTo: '2026-11-03' },
+  { key: 'REHEARSE-NOV-2026', validFrom: '2026-11-04', validTo: '2026-11-26' },
+  { key: 'PRESENTER-TEST',    validFrom: '2026-11-01', validTo: '2026-11-26' },
 ];
 
 function keyIsValid(input) {
